@@ -1,0 +1,12 @@
+beautifulsoup4==4.12.2
+requests==2.31.0
+urllib3==2.1.0
+html5lib==1.1
+validators==0.22.0
+html2text==2020.1.16
+tqdm==4.66.1
+python-dotenv==1.0.0
+tenacity==8.2.3
+aiohttp==3.9.1
+fake-useragent==1.4.0
+robotexclusionrulesparser==1.7.1
