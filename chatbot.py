@@ -1,77 +1,292 @@
 import os
 import re
 import gradio as gr
-from dotenv import load_dotenv
-from openai import OpenAI
-from pinecone import Pinecone
+#from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
 from langchain_pinecone import PineconeVectorStore
-from langchain_openai import OpenAIEmbeddings
-
+from langchain_openai.embeddings import OpenAIEmbeddings
+from langchain.chains import create_retrieval_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain import hub
+from pinecone import Pinecone
+from dotenv import load_dotenv
 load_dotenv()
+from openai import OpenAI
 
-# Initialize APIs
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-index_name = "websouls"
-namespace = "websoulsRAGT1"
-stats = pc.describe_index(index_name)
-print(stats)
 
-desc = pc.describe_index(name=index_name)
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+print(PINECONE_API_KEY)
+# Initialize Pinecone
+pc = Pinecone(api_key=os.getenv('PINECONE_API_KEY'))
+INDEX_NAME = "websouls"
+NAMESPACE = "websoulsRAGT1"  # ⚠️ MUST match your upload namespace
+
+# Get index
+desc = pc.describe_index(name=INDEX_NAME)
 pc_index = pc.Index(host=desc.host)
 
-# Embeddings (OpenAI hosted)
+# Initialize embeddings - MUST match your upload config
 embedding_function = OpenAIEmbeddings(
     model="text-embedding-3-large",
-    api_key=os.getenv("OPENAI_API_KEY"),
+    api_key=os.getenv('OPENAI_API_KEY'),
     dimensions=768,
 )
 
-# Vector store
-vector_store = PineconeVectorStore(index=pc_index, embedding=embedding_function)
-retriever = vector_store.as_retriever()
-print(vector_store,retriever,"retriever")
-# LLM (OpenAI remote)
-def openai_llm(question, context):
-    formatted_prompt = f"Question: {question}\n\nContext: {context}"
-    system_prompt = (
-        "You are a helpful assistant for Websouls. "
-        "You must strictly answer only using the information provided in the 'Context'. "
-        "If the answer is not clearly present in the context, respond with: "
-        "'I'm sorry, but I couldn’t find that information in Websouls' documentation.' "
-        "Do not make up or guess information."
-    )
-    response = client.chat.completions.create(
-        model="gpt-4o",  # or "gpt-4o-mini" if you want cheaper calls
+# Create vector store with NAMESPACE
+vector_store = PineconeVectorStore(
+    index=pc_index, 
+    embedding=embedding_function,
+    namespace=NAMESPACE,  # 🔥 This is likely what's missing!
+)
+
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+
+# Create retriever
+retriever = vector_store.as_retriever(
+    search_kwargs={"k": 5}  # Return top 5 results
+)
+
+# print(vector_store.similarity_search(query="What is websouls"))
+# print(retriever.invoke("What is websouls"))
+
+
+# # Initialize LLM
+# llm = ChatOpenAI(
+#     openai_api_key=os.getenv('OPENAI_API_KEY'),
+#     model_name='gpt-4o-mini',
+#     temperature=0.0
+# )
+
+# # Create chains
+# retrieval_qa_chat_prompt = hub.pull("langchain-ai/retrieval-qa-chat")
+# combine_docs_chain = create_stuff_documents_chain(llm, retrieval_qa_chat_prompt)
+# retrieval_chain = create_retrieval_chain(retriever, combine_docs_chain)
+
+# # Test query
+# result = retrieval_chain.invoke({"input": "What services do websouls offer"})
+# print("---------")
+# print(result)
+
+
+
+# print("=" * 60)
+# print("DEBUGGING PINECONE METADATA STRUCTURE")
+# print("=" * 60)
+
+# # Test 1: Direct Pinecone query
+# print("\n1️⃣ DIRECT PINECONE QUERY:")
+# query_vector = embedding_function.embed_query("What services do websouls offer")
+# results = pc_index.query(
+#     vector=query_vector,
+#     top_k=2,
+#     namespace=NAMESPACE,
+#     include_metadata=True
+# )
+
+# for i, match in enumerate(results['matches']):
+#     print(f"\n--- Match {i+1} ---")
+#     print(f"ID: {match['id']}")
+#     print(f"Score: {match['score']}")
+#     print(f"Metadata keys: {list(match.get('metadata', {}).keys())}")
+#     print(f"Metadata structure:")
+#     for key, value in match.get('metadata', {}).items():
+#         value_preview = str(value)[:100] if value else "None"
+#         print(f"  - {key}: {value_preview}...")
+
+# # Test 2: Try different text_key values
+# print("\n" + "=" * 60)
+# print("2️⃣ TESTING DIFFERENT text_key VALUES:")
+# print("=" * 60)
+
+# test_keys = [None, "text", "page_content", "content"]
+
+# for text_key in test_keys:
+#     print(f"\n--- Testing text_key='{text_key}' ---")
+#     try:
+#         if text_key is None:
+#             vector_store = PineconeVectorStore(
+#                 index=pc_index,
+#                 embedding=embedding_function,
+#                 namespace=NAMESPACE
+#             )
+#         else:
+#             vector_store = PineconeVectorStore(
+#                 index=pc_index,
+#                 embedding=embedding_function,
+#                 namespace=NAMESPACE,
+#                 text_key=text_key
+#             )
         
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": formatted_prompt}
-        ]
+#         retriever = vector_store.as_retriever(search_kwargs={"k": 2})
+#         docs = retriever.invoke("What services do websouls offer")
+        
+#         print(f"✅ Retrieved {len(docs)} documents")
+#         if len(docs) > 0:
+#             print(f"First doc preview: {docs[0].page_content[:150]}...")
+#             print(f"First doc metadata keys: {list(docs[0].metadata.keys())}")
+#         else:
+#             print("❌ No documents retrieved")
+#     except Exception as e:
+#         print(f"❌ Error: {e}")
+
+# # Test 3: Try similarity search directly
+# print("\n" + "=" * 60)
+# print("3️⃣ TESTING SIMILARITY_SEARCH METHOD:")
+# print("=" * 60)
+
+# vector_store = PineconeVectorStore(
+#     index=pc_index,
+#     embedding=embedding_function,
+#     namespace=NAMESPACE,
+#     text_key="text"
+# )
+
+# try:
+#     docs = vector_store.similarity_search("What services do websouls offer", k=2)
+#     print(f"similarity_search returned: {len(docs)} documents")
+#     if len(docs) > 0:
+#         print(f"First doc content preview: {docs[0].page_content[:150]}...")
+# except Exception as e:
+#     print(f"Error: {e}")
+
+# # Test 4: Check if it's a LangChain version issue
+# print("\n" + "=" * 60)
+# print("4️⃣ VERSION INFO:")
+# print("=" * 60)
+
+# import langchain_pinecone
+# import langchain_openai
+# import langchain
+
+# print(f"langchain_pinecone version: {langchain_pinecone.__version__}")
+# print(f"langchain_openai version: {langchain_openai.__version__}")
+# print(f"langchain version: {langchain.__version__}")
+
+
+
+# # Check index stats
+# stats = pc_index.describe_index_stats()
+# print(f"Total vectors: {stats['total_vector_count']}")
+# print(f"Namespaces: {stats.get('namespaces', {})}")
+
+# # Direct query test
+# query_vector = embedding_function.embed_query("What services do websouls offer")
+# results = pc_index.query(
+#     vector=query_vector,
+#     top_k=5,
+#     namespace=NAMESPACE,  # Make sure namespace is specified
+#     include_metadata=True
+# )
+# print(f"Found {len(results['matches'])} matches")
+# for match in results['matches']:
+#     print(f"Score: {match['score']}")
+#     print(f"Metadata: {match.get('metadata', {})}")
+    
+# # Test retriever
+# docs = retriever.get_relevant_documents("What services do websouls offer")
+# print(f"Retrieved {len(docs)} documents")
+# for i, doc in enumerate(docs):
+#     print(f"\nDoc {i+1}:")
+#     print(doc.page_content[:200])  # First 200 chars
+system_prompt = (
+    "You are an intelligent, marketing-oriented assistant for Websouls. "
+    "Your role is to help users explore Websouls' hosting and related services with clear, complete, and persuasive information. "
+    "\n\n"
+    "### Accuracy and Context Rules\n"
+    "- You must strictly answer **only** using the information provided in the 'Context'. "
+    "- Never invent or assume details that are not explicitly found in the context. "
+    "- If the requested information is not present, respond with: "
+    "'I'm sorry, but I couldn’t find that information in Websouls' documentation.' "
+    "- However, use reasoning to **combine** related factual details from the context (e.g., if all plans include a common feature, mention it once clearly). "
+    "- Do **not summarize or shorten** technical or feature details — include everything factual and important from the source. "
+    "\n\n"
+    "### Cleaning & Relevance\n"
+    "- Ignore irrelevant or scraped navigation text like 'Click here', 'Register', 'Learn more', 'Buy now', 'Add to cart', etc. "
+    "- Remove promotional filler or incomplete phrases that don’t describe a real feature, benefit, or plan. "
+    "- Keep all plan names, prices, and technical details intact. "
+    "\n\n"
+    "### Presentation & Marketing Tone\n"
+    "- Present information in a **friendly, confident, marketing tone** that encourages users to choose a plan — but **never hallucinate** new data. "
+    "- If the user asks for the *best*, *recommended*, or *most popular* plan, analyze the context and select the most suitable plan using logical cues "
+    "such as higher performance, more features, or explicit mentions like 'recommended', 'best seller', etc. "
+    "- Always include all available plans with their full feature lists before recommending one. "
+    "- Use clean formatting with headings, subheadings, and bullet points for readability. "
+    "\n\n"
+    "### Decision Handling\n"
+    "- If the user’s question is broad or ambiguous (e.g., 'show me hosting plans'), list all hosting categories first (e.g., Shared, VPS, Cloud, Reseller) "
+    "and ask the user to choose which one they want details for. "
+    "- After the user specifies a category, show all plans under that category with complete features and pricing. "
+    "\n\n"
+    "### Source Attribution\n"
+    "- Always include clickable links to the source(s) from which information was retrieved, based on the metadata in the context. "
+)
+
+h_messages = [{"role": "system", "content": system_prompt}]
+
+def openai_llm(question, context):
+    # Add current question
+    h_messages.append({"role": "user", "content": f"Question: {question}\n\nContext:\n{context}"})
+
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=h_messages
     )
+    print("h_messages: ",h_messages)
 
-    response_content = response.choices[0].message.content
+    response_content = response.choices[0].message.content.strip()
     final_answer = re.sub(r"<think>.*?</think>", "", response_content, flags=re.DOTALL).strip()
-    return final_answer
 
+    # Add assistant reply to conversation
+    h_messages.append({"role": "assistant", "content": final_answer})
+    return final_answer
 def combine_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
 
+
+def format_chunk(chunk):
+    source = chunk['metadata'].get('source', 'Unknown source')
+    text = chunk['metadata'].get('text', '')
+    
+    formatted = f"""-------
+Source: {source}
+
+{text}
+"""
+    return formatted
+
 def rag_chain(question):
-    retrieved_docs = retriever.invoke(question)
-    formatted_content = combine_docs(retrieved_docs)
-    if not formatted_content.strip():
-        print( "⚠️ No relevant docs found in Pinecone.", question)
-    return openai_llm(question, formatted_content)
+    query_vector = embedding_function.embed_query(question)
+    results = pc_index.query(
+    vector=query_vector,
+    top_k=15,
+    namespace=NAMESPACE,
+    include_metadata=True
+)
+    
+    res = ""
+    for r in results.get("matches",[]):
+        res+= format_chunk(r) 
+    print( "_------")
+   # print(res,"res fr ques: ",question)
+    print("_---------")
+    # formatted_content = combine_docs(results)
+    # if not formatted_content.strip():
+    #     print( "⚠️ No relevant docs found in Pinecone.", question)
+    return openai_llm(question, res)
 
 def answer_fn(message, history):
+    h_messages.append({"role":"user", "content": message})
     return rag_chain(question=message)
 
 demo = gr.ChatInterface(
     fn=answer_fn,
     title="Q/A Bot",
     description="Ask me anything!",
-    examples=["What is Python?", "Explain recursion", "What are websouls hosting plans?"]
+    examples=[ "What are websouls hosting plans?"]
+    
 )
 
-demo.launch()
+demo.launch(share=True)
+
