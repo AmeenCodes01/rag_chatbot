@@ -191,56 +191,51 @@ retriever = vector_store.as_retriever(
 #     print(f"\nDoc {i+1}:")
 #     print(doc.page_content[:200])  # First 200 chars
 system_prompt = (
-    "You are an intelligent, marketing-oriented assistant for Websouls. "
-    "Your role is to help users explore Websouls' hosting and related services with clear, complete, and persuasive information. "
-    "\n\n"
-    "### Accuracy and Context Rules\n"
-    "- You must strictly answer **only** using the information provided in the 'Context'. "
-    "- Never invent or assume details that are not explicitly found in the context. "
-    "- If the requested information is not present, respond with: "
-    "'I'm sorry, but I couldn’t find that information in Websouls' documentation.' "
-    "- However, use reasoning to **combine** related factual details from the context (e.g., if all plans include a common feature, mention it once clearly). "
-    "- Do **not summarize or shorten** technical or feature details — include everything factual and important from the source. "
-    "\n\n"
-    "### Cleaning & Relevance\n"
-    "- Ignore irrelevant or scraped navigation text like 'Click here', 'Register', 'Learn more', 'Buy now', 'Add to cart', etc. "
-    "- Remove promotional filler or incomplete phrases that don’t describe a real feature, benefit, or plan. "
-    "- Keep all plan names, prices, and technical details intact. "
-    "\n\n"
-    "### Presentation & Marketing Tone\n"
-    "- Present information in a **friendly, confident, marketing tone** that encourages users to choose a plan — but **never hallucinate** new data. "
-    "- If the user asks for the *best*, *recommended*, or *most popular* plan, analyze the context and select the most suitable plan using logical cues "
-    "such as higher performance, more features, or explicit mentions like 'recommended', 'best seller', etc. "
-    "- Always include all available plans with their full feature lists before recommending one. "
-    "- Use clean formatting with headings, subheadings, and bullet points for readability. "
-    "\n\n"
-    "### Decision Handling\n"
-    "- If the user’s question is broad or ambiguous (e.g., 'show me hosting plans'), list all hosting categories first (e.g., Shared, VPS, Cloud, Reseller) "
-    "and ask the user to choose which one they want details for. "
-    "- After the user specifies a category, show all plans under that category with complete features and pricing. "
-    "\n\n"
-    "### Source Attribution\n"
-    "- Always include clickable links to the source(s) from which information was retrieved, based on the metadata in the context. "
+    "You are a helpful marketing assistant for Websouls. "
+    "Your task is to present hosting plans and their features in a structured, promotional tone. "
+    "You must NEVER omit or skip any information from the 'Context'. "
+    "Every sentence, bullet point, and benefit listed in the context counts as a valid feature — even if it looks like descriptive or promotional text (for example, 'Powerful AI Website Builder allows you to create a professional website with an AI content generator'). "
+    "List each plan exactly as described, with all its features preserved word-for-word whenever possible. "
+    "If the context only shows one plan, display only that plan. If multiple plans appear, show all individually with their own titles, prices, and features. "
+    "You may clean up formatting (e.g., add bullet points or bold titles), but you must not summarize, merge, or remove any features or benefits. "
+    "Ignore irrelevant or navigational text like 'Click here', 'Register', or similar. "
+    "When asked for a recommendation (like 'best plan' or 'most popular'), choose the plan explicitly labeled as 'recommended', 'most popular', or highest-tier in the context. "
+    "If no such label exists, state that all plans are good options depending on user needs. "
+    "Do not invent or assume anything not clearly stated in the context."
 )
 
-h_messages = [{"role": "system", "content": system_prompt}]
+h_messages = [{"role":"system","content":system_prompt}]
 
 def openai_llm(question, context):
+    global h_messages
     # Add current question
-    h_messages.append({"role": "user", "content": f"Question: {question}\n\nContext:\n{context}"})
+    if "h_messages" not in globals() or not h_messages:
+        h_messages = [{"role": "system", "content": system_prompt}]
+    
+    # Add new user message
+    h_messages.append({"role": "user", "content": f"Question: {question}\n\n{context}"})
+
+    # Keep only the system + last 6 messages (3 exchanges)
+    if len(h_messages) > 7:  # 1 system + (3 user + 3 assistant)
+        h_messages = [h_messages[0]] + h_messages[-6:]
 
     response = client.chat.completions.create(
         model="gpt-4o",
-        messages=h_messages
+        messages=[
+                  {"role": "system", "content": system_prompt},
+                  {"role": "user", "content": f"Question: {question}\n\n{context}"}
+                  
+                  ]
     )
-    print("h_messages: ",h_messages)
-
+   # print("h_messages: ",h_messages)
+    print("------------------")
     response_content = response.choices[0].message.content.strip()
     final_answer = re.sub(r"<think>.*?</think>", "", response_content, flags=re.DOTALL).strip()
 
     # Add assistant reply to conversation
     h_messages.append({"role": "assistant", "content": final_answer})
     return final_answer
+
 def combine_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
 
@@ -269,7 +264,7 @@ def rag_chain(question):
     for r in results.get("matches",[]):
         res+= format_chunk(r) 
     print( "_------")
-   # print(res,"res fr ques: ",question)
+    print(res,"res fr ques: ",question)
     print("_---------")
     # formatted_content = combine_docs(results)
     # if not formatted_content.strip():
@@ -277,12 +272,13 @@ def rag_chain(question):
     return openai_llm(question, res)
 
 def answer_fn(message, history):
-    h_messages.append({"role":"user", "content": message})
+    
     return rag_chain(question=message)
 
 demo = gr.ChatInterface(
     fn=answer_fn,
     title="Q/A Bot",
+    type="messages",
     description="Ask me anything!",
     examples=[ "What are websouls hosting plans?"]
     
