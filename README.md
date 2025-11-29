@@ -1,3 +1,9 @@
+---
+title: rag-scrapper
+app_file: chatbot.py
+sdk: gradio
+sdk_version: 5.44.1
+---
 # RagScraper: Advanced Web Scraping for RAG/LLM Applications
 
 A production-ready web scraper designed specifically for extracting and processing content for Large Language Models (LLMs) and Retrieval-Augmented Generation (RAG) applications. RagScraper intelligently processes web content to make it ideal for training data and RAG systems.

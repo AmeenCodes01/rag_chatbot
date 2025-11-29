@@ -8,7 +8,7 @@ from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 from crawl4ai import LLMExtractionStrategy
 from crawl4ai.async_dispatcher import MemoryAdaptiveDispatcher
 import re 
-
+import base64
 from crawl4ai.async_crawler_strategy import AsyncPlaywrightCrawlerStrategy
 class Product(BaseModel):
     name: str
@@ -396,7 +396,7 @@ urls = [
     "https://websouls.com/domain-transfer",
     "https://websouls.com/ecommerce-solution",
     "https://websouls.com/policy",
-    "https://websouls.com/buy-pk-domain",
+     "https://websouls.com/buy-pk-domain",
     "https://websouls.com/ssl-certificates",
     "https://websouls.com/pk-vps",
     "https://websouls.com/vps-hosting",
@@ -410,6 +410,14 @@ urls = [
     "https://websouls.com/domain-registration",
     "https://websouls.com/payment-methods"
 ]
+
+def url_to_filename(url: str) -> str:
+    encoded = base64.urlsafe_b64encode(url.encode()).decode()
+    return f"{encoded}.md"
+
+def filename_to_url(filename: str) -> str:
+    encoded = filename.replace(".md", "")
+    return base64.urlsafe_b64decode(encoded.encode()).decode()
 
 
 def json_to_markdown(data):
@@ -435,9 +443,6 @@ def json_to_markdown(data):
 
     return "\n\n".join(md_sections)
 
-def sanitize_filename(url: str) -> str:
-    # Replace all non-alphanumeric chars with "_"
-    return re.sub(r'[^a-zA-Z0-9]', '_', url)
 
 
 async def crawl_streaming():
@@ -513,8 +518,8 @@ magic=True,
         ):
             if result.success:
                 # Process each result immediately
-                filename = sanitize_filename(result.url) + ".md"
-                with open(filename, "a", encoding="utf-8") as f:
+                filename = url_to_filename(result.url) 
+                with open(f"./websouls_scraped_md/{filename}", "a", encoding="utf-8") as f:
                   f.write(result.markdown + "\n\n")
                
             else:
